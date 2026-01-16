@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gothic VCR Spirit Box Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=MedievalSharp&family=Special+Elite&display=swap" rel="stylesheet">
+    <style>
+        :root { --blood: #ff1111; --gold: #c5a059; --bg: #050505; }
+        body { 
+            background: var(--bg); color: #d4d4d4; font-family: 'Special Elite', serif; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100vh; margin: 0; overflow: hidden;
+        }
+
+        /* VCR CRT STYLING */
+        .crt-container {
+            position: relative; width: 340px; height: 180px;
+            background: #000; border: 8px solid #1a1a1a; border-radius: 15px;
+            overflow: hidden; box-shadow: 0 0 40px #000, 0 0 10px rgba(255,0,0,0.3);
+        }
+        .crt-container::before {
+            content: " "; position: absolute; inset: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.05));
+            z-index: 2; background-size: 100% 3px, 3px 100%; pointer-events: none;
+        }
+        #screen { 
+            width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+            font-family: 'MedievalSharp', cursive; font-size: 3.2rem; color: var(--blood);
+            text-shadow: 2px 0 10px rgba(255,0,0,0.8); z-index: 1;
+        }
+
+        /* ANIMATIONS */
+        @keyframes shake {
+            0% { transform: translate(0,0); filter: hue-rotate(0deg); }
+            25% { transform: translate(-4px, 4px) skew(2deg); filter: hue-rotate(90deg); }
+            75% { transform: translate(4px, -4px) skew(-2deg); filter: hue-rotate(270deg); }
+            100% { transform: translate(0,0); }
+        }
+        .glitch { animation: shake 0.1s infinite; color: #fff !important; }
+
+        /* DECK CONTROLS */
+        .vcr-deck { margin-top: 25px; padding: 15px; background: #0f0f0f; border: 1px solid #222; border-radius: 4px; }
+        button {
+            background: #111; color: var(--gold); border: 1px solid #444;
+            padding: 10px 16px; margin: 4px; cursor: pointer; font-family: 'MedievalSharp';
+        }
+        button:active { background: var(--blood); color: #000; }
+        .active-btn { border-color: var(--blood); color: var(--blood); box-shadow: 0 0 8px var(--blood); }
+
+        /* ADMIN VAULT OVERLAY */
+        #vault { 
+            position: fixed; inset: 0; background: #000; display: none; padding: 25px; z-index: 100;
+            border: 4px solid var(--gold); overflow-y: auto;
+        }
+        textarea { width: 100%; height: 80px; background: #111; color: #0f0; border: 1px solid #333; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+    <div class="crt-container">
+        <div id="screen">READY</div>
+    </div>
+
+    <div class="vcr-deck">
+        <button id="slow" onclick="engage(1500, 'slow')">SLOW</button>
+        <button id="play" onclick="engage(800, 'play')">PLAY</button>
+        <button id="ffwd" onclick="engage(200, 'ffwd')">FFWD</button>
+        <button onclick="disengage()">STOP</button>
+    </div>
+
+    <small onclick="accessVault()" style="margin-top:25px; color:#222; cursor:pointer; letter-spacing:2px;">[ VAULT ACCESS ]</small>
+
+    <div id="vault">
+        <h2 style="color:var(--blood); font-family:'MedievalSharp';">SESSION VAULT & LOGS</h2>
+        <button onclick="toggleVault()">⬅ EXIT</button>
+        <button onclick="exportLogs()" style="background:var(--blood); color:#000;">💾 EXPORT TO FOLDER</button>
+        <button onclick="wipeVault()" style="color:red;">⚠ PURGE INTERNAL</button>
+        <hr style="border:0; border-top:1px solid #222; margin:20px 0;">
+        <p>Edit Word Database (Comma separated):</p>
+        <textarea id="wordlist">DARK,VOID,LOST,BONE,TIME,NIGHT,COLD,GHOST,STAY,RUN,AWAKE,DEATH,BORN,NEAR,AWAY</textarea>
+        <button onclick="saveWords()">SAVE DATABASE</button>
+        <div id="vault-content" style="font-family:monospace; font-size:0.8rem; color:#666; margin-top:20px;"></div>
+    </div>
+
+    <script>
+        let audioCtx, noise, gain, timer, lastWord = "";
+        let logs = JSON.parse(localStorage.getItem('spirit_logs') || "[]");
+        const PASS = "BETA123";
+
+        function getEntropyWord(list) {
+            const cryptoArr = new Uint32Array(1);
+            window.crypto.getRandomValues(cryptoArr);
+            return list[cryptoArr[0] % list.length].trim();
+        }
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            noise = audioCtx.createBufferSource();
+            noise.buffer = buffer; noise.loop = true;
+            gain = audioCtx.createGain(); gain.gain.value = 0.07;
+            const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 700;
+            noise.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
+            noise.start();
+        }
+
+        function engage(speed, id) {
+            disengage();
+            initAudio();
+            document.getElementById(id).classList.add('active-btn');
+            const words = document.getElementById('wordlist').value.split(',');
+            
+            timer = setInterval(() => {
+                const word = getEntropyWord(words);
+                const screen = document.getElementById('screen');
+                
+                // Glitch Trigger
+                if (word === lastWord) screen.classList.add('glitch');
+                else screen.classList.remove('glitch');
+                
+                screen.innerText = word;
+                lastWord = word;
+                logs.push(`[${new Date().toLocaleTimeString()}] ${word}`);
+                localStorage.setItem('spirit_logs', JSON.stringify(logs));
+            }, speed);
+        }
+
+        function disengage() {
+            clearInterval(timer);
+            if(audioCtx) { audioCtx.close(); audioCtx = null; }
+            document.querySelectorAll('button').forEach(b => b.classList.remove('active-btn'));
+            document.getElementById('screen').innerText = "STOP";
+            document.getElementById('screen').classList.remove('glitch');
+        }
+
+        function accessVault() { if(prompt("Passcode:") === PASS) toggleVault(); }
+        function toggleVault() {
+            const v = document.getElementById('vault');
+            v.style.display = v.style.display === 'block' ? 'none' : 'block';
+            document.getElementById('vault-content').innerText = logs.slice(-20).join('\n');
+        }
+
+        function saveWords() { localStorage.setItem('custom_words', document.getElementById('wordlist').value); alert("Memory Updated."); }
+
+        function exportLogs() {
+            const blob = new Blob([logs.join('\n')], {type: 'text/plain'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `Session_${Date.now()}.txt`;
+            a.click();
+        }
+
+        function wipeVault() { if(confirm("Wipe all tapes?")) { logs = []; localStorage.removeItem('spirit_logs'); toggleVault(); } }
+
+        window.onload = () => { 
+            const saved = localStorage.getItem('custom_words');
+            if(saved) document.getElementById('wordlist').value = saved;
+        };
+    </script>
+</body>
+</html>
